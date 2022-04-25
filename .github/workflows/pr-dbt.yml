@@ -1,0 +1,91 @@
+
+name: pr-dbt
+
+permissions: write-all
+
+on:
+  pull_request
+
+env:
+  dev_service_account: [DEV_SERVICE_ACCOUNT]
+  prod_service_account: [PROD_SERVICE_ACCOUNT]
+  dev_project_number: [DEV_PROJECT_NUMBER]
+  prod_project_number: [PROD_PROJECT_NUMBER]
+  workload_identity_pool: [WORKLOAD_IDENTITY_POOL]
+
+jobs:
+  test-dbt-models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: "actions/checkout@v2"
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Install poetry
+        uses: Gr1N/setup-poetry@v7
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: ${{ runner.os }}-poetry-integration-${{ hashFiles('dbt/poetry.lock') }}
+
+      # first login to the production project to retrieve the manifest file,
+      # which contains the current state of the project
+      - id: 'auth-production'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          workload_identity_provider: 'projects/${{ env.prod_project_number }}/locations/global/workloadIdentityPools/${{ env.workload_identity_pool }}/providers/github'
+          service_account: '${{ env.prod_service_account }}'
+          create_credentials_file: true
+
+      - name: 'gcloud login'
+        run: |-
+          cat "${{ steps.auth-production.outputs.credentials_file_path }}"
+          gcloud auth login --brief --cred-file="${{ steps.auth-production.outputs.credentials_file_path }}"
+      
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v0'
+
+      # this gets the manifest file from google cloud storage. This file
+      # contains information on the models that are currently deployed in
+      # production and is updated whenever the manual-dbt-docs workflow
+      # is triggered, which is every time a release is triggered
+      - name: Get manifest file
+        run: gsutil cp gs://manifest-location-prod/manifest.json manifest.json
+
+      # now login the dev project to run dbt
+      - id: 'auth-dev'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          workload_identity_provider: 'projects/${{ env.dev_project_number }}/locations/global/workloadIdentityPools/${{ env.workload_identity_pool }}/providers/github'
+          service_account: '${{ env.dev_service_account }}'
+          create_credentials_file: true
+
+      - name: 'gcloud login'
+        run: |-
+          cat "${{ steps.auth-dev.outputs.credentials_file_path }}"
+          gcloud auth login --brief --cred-file="${{ steps.auth-dev.outputs.credentials_file_path }}"
+      
+      - name: Install dbt dependencies
+        run: poetry run dbt deps --target dev
+
+      - name: Debug dbt
+        run: poetry run dbt debug --target dev --profiles-dir .
+
+      # only want to run dbt models that are modified, because running all models
+      # whenever a new pull request would open is expensive
+      # and unnecessary
+      - name: Run modified dbt models and its first-order children
+        run: poetry run dbt run --target dev --profiles-dir . --select state:modified+ --state ./
+
+      - name: Run modified dbt tests
+        run: poetry run dbt test --target dev --profiles-dir . --select state:modified --state ./
