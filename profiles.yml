@@ -1,0 +1,27 @@
+customer360:
+  target: dev
+  outputs:
+
+    dev: # dev environment
+      type: bigquery
+      method: oauth
+      dataset: [DATASET_NAME]
+      project: [PROJECT_NAME]
+      threads: 4
+      timeout_seconds: 300
+      location: eu
+      impersonate_service_account: [SERVICE_ACCOUNT]
+      priority: interactive
+      retries: 1
+
+    prod: # production environment
+      type: bigquery
+      method: oauth
+      dataset: [DATASET_NAME]
+      project: [PROJECT_NAME]
+      threads: 4
+      timeout_seconds: 300
+      location: eu
+      impersonate_service_account: [SERVICE_ACCOUNT]
+      priority: interactive
+      retries: 1
