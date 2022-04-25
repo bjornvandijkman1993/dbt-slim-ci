@@ -1,0 +1,97 @@
+name: Build and publish DBT docs
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  project_number: xxx
+  service_account: xxx
+  workload_identity_pool: xxx
+
+jobs:
+  publish_docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v2
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Install poetry
+        uses: Gr1N/setup-poetry@v7
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: ${{ runner.os }}-poetry-integration-${{ hashFiles('dbt/poetry.lock') }}
+
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          workload_identity_provider: 'projects/${{ env.project_number }}/locations/global/workloadIdentityPools/${{ env.workload_identity_pool }}/providers/github'
+          service_account: '${{ env.service_account }}'
+          create_credentials_file: true
+
+      - name: 'gcloud login'
+        run: |-
+          cat "${{ steps.auth.outputs.credentials_file_path }}"
+          gcloud auth login --brief --cred-file="${{ steps.auth.outputs.credentials_file_path }}"
+      
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v0'
+
+      - name: Install dbt dependencies
+        run: poetry run dbt deps --target dev
+
+      # this step is necessary in order to get the right information into
+      # the documentation
+      - name: Run dbt
+        run: poetry run dbt run --target prod --profiles-dir .
+
+      # docs are generated and stored in the dbt/public folder within
+      # the github runner
+      - name: Build docs
+        run: |
+          poetry run dbt docs generate --target prod --profiles-dir .
+      
+      - name: Copy docs
+        run: |
+          mkdir -p public
+          mv docs/index.html public/
+          mv docs/catalog.json public/
+          mv docs/manifest.json public/
+          mv docs/run_results.json public/
+      
+      # the manifest.json file is stored in cloud storage and reflects the current state
+      # of the production environment. When a new pull request is opened,
+      # pr-dbt.yml is triggered which retrieves the manifest.json file.
+      # This file is then used to know which models are already being run
+      # in production and which ones are new (and should be run/tested)
+      - name: Copy manifest file to gcs bucket
+        run: |
+          gsutil cp ./public/manifest.json gs://manifest-location-prod
+      
+      # publishes our dbt documentation to
+      # https://friendly-lamp-96d8cf45.pages.github.io/
+      - name: Publish 🚀
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: dbt/public
+          publish_branch: gh-pages
+          commit_message: ${{ needs.setup.outputs.checkout_ref }}
