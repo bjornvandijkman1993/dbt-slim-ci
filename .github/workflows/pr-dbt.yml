@@ -28,15 +28,16 @@ jobs:
       - name: Install poetry
         uses: Gr1N/setup-poetry@v7
 
-      - name: Install dependencies
-        run: poetry install
-
       - name: Cache
         id: cache
         uses: actions/cache@v2
         with:
           path: ~/.cache/pypoetry/virtualenvs
-          key: ${{ runner.os }}-poetry-integration-${{ hashFiles('dbt/poetry.lock') }}
+          key: ${{ runner.os }}-poetry-integration-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: poetry install
 
       # first login to the production project to retrieve the manifest file,
       # which contains the current state of the project
