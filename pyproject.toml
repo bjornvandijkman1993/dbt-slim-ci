@@ -1,0 +1,28 @@
+
+[tool.poetry]
+name = "python-poetry"
+version = "0.1.0"
+description = ""
+
+[tool.poetry.dependencies]
+python = "^3.9"
+google-cloud-storage = "^1.44.0"
+dbt-bigquery = "^1.0.0"
+dbt-core = "^1.0.1"
+pylint = "^2.12.2"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+black = "^21.12b0"
+flake8 = "^4.0.1"
+
+[tool.black]
+line-length = 88
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.sqlfluff.templater.dbt]
+profiles_dir = "."
+project_dir = "."
