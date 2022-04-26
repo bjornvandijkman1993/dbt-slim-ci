@@ -3,6 +3,7 @@
 name = "python-poetry"
 version = "0.1.0"
 description = ""
+authors = ["bjornvandijkman-ingka <94913972+bjornvandijkman-ingka@users.noreply.github.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
